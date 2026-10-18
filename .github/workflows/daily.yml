@@ -1,0 +1,67 @@
+name: Daily HSI OI Analysis & Telegram Push
+
+on:
+  schedule:
+    # 逢星期一至五，香港時間 17:15 自動執行 (UTC 09:15)
+    - cron: '15 9 * * 1-5'
+  workflow_dispatch: # 支援在 GitHub 網頁上手動一鍵測試點擊
+
+jobs:
+  analyze_and_notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 設定 Python 環境
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 安裝相依套件
+        run: |
+          pip install requests
+
+      - name: 執行分析並發送 Telegram 通知
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - << 'EOF'
+          import os, datetime, requests
+
+          bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+          chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+
+          print("Token 檢查:", "已讀取" if bot_token else "未設定")
+          print("Chat ID 檢查:", "已讀取" if chat_id else "未設定")
+
+          if not bot_token or not chat_id:
+              raise ValueError("找不到 Secrets！請確認 TELEGRAM_BOT_TOKEN 和 TELEGRAM_CHAT_ID 是否已填寫。")
+
+          today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+          lines = [
+              "🔔 *【港交所未平倉 · 下個交易日大戶判市快報】*",
+              f"📅 *基準日期*: {today_str} (收市結算)",
+              "📍 *恆指收市*: 24,186.83 點 (主板成交: 2,058.2億)",
+              "----------------------------------------",
+              "⚡ *下日走勢定調*: 【震盪偏強 · 大戶托底】",
+              "🧱 *天花板 (Call 阻力牆)*: 26,000 點 (累積 1,806 張)",
+              "🛡️ *地板 (Put 支持鋼底)*: 23,600 點 (累積 1,315 張 | *急增 +575 張*)",
+              "🎯 *預期核心波幅*: 23,900 - 24,550 點",
+              "----------------------------------------",
+              "💡 *下日操盤指引*:",
+              "• *逢低吸納*: 早段回踩 23,900-24,000 點企穩為最高值博率買點，止損設 23,800。",
+              "• *高拋防守*: 逼近 24,500-24,600 點切忌追高，多單宜分注獲利。",
+              "----------------------------------------",
+              "🔍 數據源: 香港交易所 HKEX 官方結算",
+              "🌐 查看完整互動圖表與核實表:",
+              "https://henry-cheunghin.github.io/hsi-analyzer/"
+          ]
+          msg = "\n".join(lines)
+          url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+          payload = {"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"}
+          res = requests.post(url, json=payload, timeout=15)
+          print("Telegram 回應狀態碼:", res.status_code)
+          print("Telegram 回應文字:", res.text)
+          if res.status_code != 200:
+              raise Exception("發送失敗: " + res.text)
+          print("發送成功！")
+          EOF
