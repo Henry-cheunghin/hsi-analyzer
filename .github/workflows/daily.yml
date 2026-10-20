@@ -1,141 +1,40 @@
-name: Daily HSI OI Analysis & Telegram Push
+name: 恆指期權未平倉全自動判市與網頁更新
 
 on:
   schedule:
-    # 逢星期一至五，香港時間每晚 23:15 自動啟動 (UTC 15:15)
+    # 逢星期一至五，香港時間每晚 23:15 自動執行 (UTC 15:15)
     - cron: '15 15 * * 1-5'
   workflow_dispatch: # 支援在 GitHub 網頁上手動一鍵點擊測試
 
+permissions:
+  contents: write # 關鍵權限：允許自動提交更新後的數據回 GitHub
+
 jobs:
-  analyze_and_notify:
+  analyze_and_auto_update:
     runs-on: ubuntu-latest
     steps:
-      - name: 下載倉庫代碼
-        uses: actions/checkout@v3
+      - name: 1. 下載倉庫代碼
+        uses: actions/checkout@v4
 
-      - name: 設定 Python 環境
-        uses: actions/setup-python@v4
+      - name: 2. 設定 Python 環境
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: 安裝相依套件
+      - name: 3. 安裝相依套件
         run: |
           pip install requests
 
-      - name: 執行港交所爬蟲並發送 Telegram
+      - name: 4. 自動抓取最新行情、期權鏈並推播 Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python - << 'EOF'
-          import os, sys, datetime, time, requests
+          python analyzer.py
 
-          bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
-          chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-
-          if not bot_token or not chat_id:
-              raise ValueError("未讀取到 TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID！")
-
-          # 智能日期判斷：香港時間 (UTC+8)
-          hk_now = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
-
-          # 若在下午 16:30 前執行（例如凌晨或上午），最新結算日應為前一個交易日
-          if hk_now.hour < 16 or (hk_now.hour == 16 and hk_now.minute < 30):
-              target_date = hk_now - datetime.timedelta(days=1)
-              # 若遇週末自動推回至星期五
-              if target_date.weekday() == 6: # Sunday
-                  target_date -= datetime.timedelta(days=2)
-              elif target_date.weekday() == 5: # Saturday
-                  target_date -= datetime.timedelta(days=1)
-          else:
-              target_date = hk_now
-
-          date_str_short = target_date.strftime("%y%m%d")
-          date_str_display = target_date.strftime("%Y-%m-%d")
-
-          url = f"https://www.hkex.com.hk/eng/stat/dmstat/dayrpt/hsio{date_str_short}.htm"
-          headers = {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-          }
-
-          print(f"[{hk_now.strftime('%H:%M:%S')}] 目標結算日期: {date_str_display}，請求網址: {url}")
-          report_text = None
-
-          # 嘗試讀取港交所官方報告
-          for attempt in range(1, 4):
-              try:
-                  res = requests.get(url, headers=headers, timeout=15)
-                  if res.status_code == 200 and "TOP 10 TRADED" in res.text:
-                      print(f"成功取得港交所官方結算報告！")
-                      report_text = res.text
-                      break
-                  else:
-                      print(f"第 {attempt} 次檢查：港交所該日尚未結算上載 (狀態碼: {res.status_code})")
-              except Exception as e:
-                  print(f"網絡請求異常: {e}")
-
-              if attempt < 3:
-                  time.sleep(10) # 快速檢查間隔
-
-          # 解析 TOP 10 成交量資料
-          top10 = []
-          if report_text:
-              in_top10 = False
-              for line in report_text.splitlines():
-                  if "TOP 10 TRADED" in line:
-                      in_top10 = True
-                      continue
-                  if in_top10:
-                      if "VOLUME" in line and "O.Q.P." in line:
-                          continue
-                      parts = line.strip().split()
-                      if len(parts) >= 10 and parts[0] in ("C", "P"):
-                          top10.append({
-                              "type": "Call" if parts[0] == "C" else "Put",
-                              "month": parts[1],
-                              "strike": int(parts[2]),
-                              "volume": int(parts[3]),
-                              "oi": int(parts[8]),
-                              "change": int(parts[9])
-                          })
-                          if len(top10) == 10:
-                              break
-                      elif len(top10) > 0 and len(parts) < 5:
-                          break
-
-          # 組織 Telegram 通知內容
-          lines = [
-              "🔔 *【港交所官方結算 · 大戶判市及十大期權成交快報】*",
-              f"📅 *結算日期*: {date_str_display} (官方最終報告)",
-              "----------------------------------------",
-              "⚡ *下日走勢定調*: 【震盪偏強 · 大戶托底】",
-              "🧱 *天花板 (Call 阻力牆)*: 26,000 點",
-              "🛡️ *地板 (Put 支持鋼底)*: 23,600 點",
-              "🎯 *預期核心波幅*: 23,900 - 24,550 點",
-              "----------------------------------------",
-              "🔥 *【當日十大期權合約成交榜 (Top 10 Volume)】*:"
-          ]
-
-          if top10:
-              for idx, it in enumerate(top10, 1):
-                  sign = "+" if it["change"] > 0 else ""
-                  cp_icon = "🔴" if it["type"] == "Call" else "🟢"
-                  lines.append(f"{idx}. {cp_icon} *{it['type']} {it['strike']:,}* ｜ 成交: *{it['volume']:,}* 張 ｜ OI: {it['oi']:,} ({sign}{it['change']})")
-          else:
-              lines.append("ℹ️ 港交所結算報告處理中，已對接實時監控。")
-
-          lines.extend([
-              "----------------------------------------",
-              "💡 *解讀提示*: 十大成交反映當日主力資金最激烈換手之行使價。",
-              "🌐 *查看完整互動攻防圖與十大成交頁*:",
-              "https://henry-cheunghin.github.io/hsi-analyzer/HSI%20analyzer/index.html"
-          ])
-
-          msg = "\n".join(lines)
-          tg_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-          payload = {"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"}
-          res = requests.post(tg_url, json=payload, timeout=15)
-          print(f"Telegram API 發送狀態: {res.status_code}")
-          print("推播任務完成！")
-          EOF
+      - name: 5. 全自動提交最新數據至 GitHub 網頁
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add data.json
+          git diff --staged --quiet || (git commit -m "🤖 自動更新恆指期權最新數據與收市價 [skip ci]" && git push)
