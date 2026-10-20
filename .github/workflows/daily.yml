@@ -7,7 +7,7 @@ on:
   workflow_dispatch: # 支援在 GitHub 網頁上手動一鍵點擊測試
 
 permissions:
-  contents: write # 關鍵權限：允許自動提交更新後的數據回 GitHub
+  contents: write # 允許自動提交更新後的數據回 GitHub
 
 jobs:
   analyze_and_auto_update:
@@ -30,11 +30,17 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python analyzer.py
+          if [ -f "analyzer.py" ]; then
+            python analyzer.py
+          elif [ -f "HSI analyzer/analyzer.py" ]; then
+            python "HSI analyzer/analyzer.py"
+          else
+            python "$(find . -name 'analyzer.py' | head -n 1)"
+          fi
 
       - name: 5. 全自動提交最新數據至 GitHub 網頁
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add data.json
+          git add data.json || true
           git diff --staged --quiet || (git commit -m "🤖 自動更新恆指期權最新數據與收市價 [skip ci]" && git push)
