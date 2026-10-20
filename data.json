@@ -1,0 +1,281 @@
+{
+  "updated_at": "2026-10-21 01:32:14 (HKT)",
+  "base_date": "2026年10月20日 (星期二) 官方收市結算",
+  "target_trade_date": "下一個交易日（2026年10月21日 星期三）",
+  "spot_price": "23,867.74",
+  "spot_price_num": 23867.74,
+  "spot_change": "-319.09",
+  "spot_change_pct": "-1.32%",
+  "turnover": "1904.5 億港元",
+  "trend_badge": "偏淡防守",
+  "trend_state": "考驗鋼底支持",
+  "trend_win_rate": "勝率 60%",
+  "trend_core": "主力防守 23,600 鋼底，靜待企穩訊號",
+  "call_wall": "26,000",
+  "call_wall_oi": "1,806",
+  "call_wall_desc": "近端第一阻力：24,200 - 24,400",
+  "put_wall": "23,600",
+  "put_wall_oi": "1,315",
+  "put_wall_change": "+575",
+  "put_wall_desc": "近端第一防守：23,600 - 23,800",
+  "range_core": "23,600 - 24,550",
+  "range_pivot": "中軸: 24,800",
+  "range_extreme": "極端破位防線：23,400 - 26,000",
+  "tactics_buy": "若指數早段回踩 23,600 – 23,700 點區間企穩，為值博率最高之買點，止損嚴守 23,540。",
+  "tactics_sell": "若反彈至 24,100 – 24,200 點阻力區切忌追高，多單應分注獲利。",
+  "tactics_breakout": "真跌破：失守 23,600 且 Put 倉斬倉，大盤將急瀉向 23,200；真突破：升穿 24,400 且成交破 2,400 億方可追多。",
+  "chain": [
+    {
+      "strike": 22000,
+      "call_vol": 0,
+      "call_change": 0,
+      "call_oi": 1,
+      "put_oi": 984,
+      "put_change": 16,
+      "put_vol": 30,
+      "note": "遠期深價外 Put 支持位"
+    },
+    {
+      "strike": 22600,
+      "call_vol": 0,
+      "call_change": 0,
+      "call_oi": 110,
+      "put_oi": 585,
+      "put_change": 111,
+      "put_vol": 207,
+      "note": "次級防守點"
+    },
+    {
+      "strike": 23000,
+      "call_vol": 2,
+      "call_change": -1,
+      "call_oi": 183,
+      "put_oi": 911,
+      "put_change": 10,
+      "put_vol": 176,
+      "note": "整數防守關卡"
+    },
+    {
+      "strike": 23400,
+      "call_vol": 208,
+      "call_change": 129,
+      "call_oi": 429,
+      "put_oi": 763,
+      "put_change": 28,
+      "put_vol": 323,
+      "note": "多空初級過渡區"
+    },
+    {
+      "strike": 23600,
+      "call_vol": 9,
+      "call_change": 3,
+      "call_oi": 184,
+      "put_oi": 1315,
+      "put_change": 575,
+      "put_vol": 1023,
+      "note": "🛡️ 本月最強 Put 鋼底 (大增575張)"
+    },
+    {
+      "strike": 23800,
+      "call_vol": 242,
+      "call_change": 193,
+      "call_oi": 623,
+      "put_oi": 878,
+      "put_change": 26,
+      "put_vol": 993,
+      "note": "下個交易日關鍵第一托底線"
+    },
+    {
+      "strike": 24000,
+      "call_vol": 250,
+      "call_change": 68,
+      "call_oi": 522,
+      "put_oi": 922,
+      "put_change": 15,
+      "put_vol": 690,
+      "note": "整數防線 (922張)"
+    },
+    {
+      "strike": 24200,
+      "call_vol": 272,
+      "call_change": -86,
+      "call_oi": 414,
+      "put_oi": 671,
+      "put_change": 0,
+      "put_vol": 204,
+      "note": "貼價拉鋸平衡區"
+    },
+    {
+      "strike": 24400,
+      "call_vol": 470,
+      "call_change": 6,
+      "call_oi": 1193,
+      "put_oi": 655,
+      "put_change": 135,
+      "put_vol": 268,
+      "note": "近端第一強阻力 (1,193張)"
+    },
+    {
+      "strike": 24600,
+      "call_vol": 841,
+      "call_change": 199,
+      "call_oi": 979,
+      "put_oi": 571,
+      "put_change": 167,
+      "put_vol": 237,
+      "note": "⚔️ 十大成交之冠 (1,919張) 關鍵阻力"
+    },
+    {
+      "strike": 24800,
+      "call_vol": 483,
+      "call_change": 33,
+      "call_oi": 705,
+      "put_oi": 542,
+      "put_change": -38,
+      "put_vol": 403,
+      "note": "中層壓頂區"
+    },
+    {
+      "strike": 25000,
+      "call_vol": 470,
+      "call_change": 22,
+      "call_oi": 928,
+      "put_oi": 543,
+      "put_change": 175,
+      "put_vol": 200,
+      "note": "心理大關阻力"
+    },
+    {
+      "strike": 25600,
+      "call_vol": 114,
+      "call_change": 17,
+      "call_oi": 496,
+      "put_oi": 276,
+      "put_change": -155,
+      "put_vol": 200,
+      "note": "深價內 Put 平倉區"
+    },
+    {
+      "strike": 26000,
+      "call_vol": 48,
+      "call_change": 14,
+      "call_oi": 1806,
+      "put_oi": 110,
+      "put_change": -155,
+      "put_vol": 200,
+      "note": "🧱 終極天花板 (全場最高 1,806張)"
+    },
+    {
+      "strike": 26400,
+      "call_vol": 3,
+      "call_change": -1,
+      "call_oi": 544,
+      "put_oi": 71,
+      "put_change": 0,
+      "put_vol": 0,
+      "note": "極度虛值區"
+    }
+  ],
+  "top10": [
+    {
+      "rank": 1,
+      "type": "Call",
+      "strike": 24600,
+      "month": "OCT-26",
+      "volume": 1919,
+      "oi": 979,
+      "oi_change": 199,
+      "role": "⚔️ 十大成交之冠 (短線最強壓頂阻力線)"
+    },
+    {
+      "rank": 2,
+      "type": "Put",
+      "strike": 23600,
+      "month": "OCT-26",
+      "volume": 1023,
+      "oi": 1315,
+      "oi_change": 575,
+      "role": "🛡️ 大戶主力托底防線 (單日暴增575張鋼底)"
+    },
+    {
+      "rank": 3,
+      "type": "Put",
+      "strike": 23800,
+      "month": "OCT-26",
+      "volume": 993,
+      "oi": 878,
+      "oi_change": 26,
+      "role": "📍 近端多頭緩衝區 (993張成交)"
+    },
+    {
+      "rank": 4,
+      "type": "Call",
+      "strike": 24800,
+      "month": "OCT-26",
+      "volume": 483,
+      "oi": 705,
+      "oi_change": 33,
+      "role": "🧱 中層阻力加碼線"
+    },
+    {
+      "rank": 5,
+      "type": "Call",
+      "strike": 24400,
+      "month": "OCT-26",
+      "volume": 470,
+      "oi": 1193,
+      "oi_change": 6,
+      "role": "🚪 近身第一道阻力關卡"
+    },
+    {
+      "rank": 6,
+      "type": "Call",
+      "strike": 25000,
+      "month": "OCT-26",
+      "volume": 470,
+      "oi": 928,
+      "oi_change": 22,
+      "role": "🎯 整數大關阻力防禦"
+    },
+    {
+      "rank": 7,
+      "type": "Put",
+      "strike": 24000,
+      "month": "OCT-26",
+      "volume": 690,
+      "oi": 922,
+      "oi_change": 15,
+      "role": "⚖️ 整數心理關口支持"
+    },
+    {
+      "rank": 8,
+      "type": "Put",
+      "strike": 24800,
+      "month": "OCT-26",
+      "volume": 403,
+      "oi": 542,
+      "oi_change": -38,
+      "role": "⚠️ 價內認沽小幅減倉"
+    },
+    {
+      "rank": 9,
+      "type": "Put",
+      "strike": 23400,
+      "month": "OCT-26",
+      "volume": 323,
+      "oi": 763,
+      "oi_change": 28,
+      "role": "🛡️ 深度防守陣地"
+    },
+    {
+      "rank": 10,
+      "type": "Call",
+      "strike": 24200,
+      "month": "OCT-26",
+      "volume": 272,
+      "oi": 414,
+      "oi_change": -86,
+      "role": "🔄 貼價拉鋸平倉區"
+    }
+  ]
+}
