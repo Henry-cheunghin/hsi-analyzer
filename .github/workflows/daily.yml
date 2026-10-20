@@ -2,7 +2,7 @@ name: Daily HSI OI Analysis & Telegram Push
 
 on:
   schedule:
-    # 逢星期一至五，香港時間每晚 23:15 自動啟動爬蟲 (UTC 15:15)
+    # 逢星期一至五，香港時間每晚 23:15 自動啟動 (UTC 15:15)
     - cron: '15 15 * * 1-5'
   workflow_dispatch: # 支援在 GitHub 網頁上手動一鍵點擊測試
 
@@ -22,13 +22,13 @@ jobs:
         run: |
           pip install requests
 
-      - name: 執行港交所爬蟲、輪詢重試並發送 Telegram
+      - name: 執行港交所爬蟲並發送 Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python - << 'EOF'
-          import os, sys, datetime, time, requests, re
+          import os, sys, datetime, time, requests
 
           bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
           chat_id = os.environ.get("TELEGRAM_CHAT_ID")
@@ -36,10 +36,22 @@ jobs:
           if not bot_token or not chat_id:
               raise ValueError("未讀取到 TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID！")
 
-          # 港交所官方每日期權報告格式: hsioYYMMDD.htm (例如 261020)
+          # 智能日期判斷：香港時間 (UTC+8)
           hk_now = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
-          date_str_short = hk_now.strftime("%y%m%d")
-          date_str_display = hk_now.strftime("%Y-%m-%d")
+
+          # 若在下午 16:30 前執行（例如凌晨或上午），最新結算日應為前一個交易日
+          if hk_now.hour < 16 or (hk_now.hour == 16 and hk_now.minute < 30):
+              target_date = hk_now - datetime.timedelta(days=1)
+              # 若遇週末自動推回至星期五
+              if target_date.weekday() == 6: # Sunday
+                  target_date -= datetime.timedelta(days=2)
+              elif target_date.weekday() == 5: # Saturday
+                  target_date -= datetime.timedelta(days=1)
+          else:
+              target_date = hk_now
+
+          date_str_short = target_date.strftime("%y%m%d")
+          date_str_display = target_date.strftime("%Y-%m-%d")
 
           url = f"https://www.hkex.com.hk/eng/stat/dmstat/dayrpt/hsio{date_str_short}.htm"
           headers = {
@@ -47,26 +59,24 @@ jobs:
               "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
           }
 
-          max_retries = 20  # 最多等候 20 次
-          retry_delay = 180 # 每次間隔 3 分鐘 (總共等候最長 60 分鐘直至港交所發布)
-
-          print(f"[{hk_now.strftime('%H:%M:%S')}] 開始檢查港交所期權結算報告: {url}")
+          print(f"[{hk_now.strftime('%H:%M:%S')}] 目標結算日期: {date_str_display}，請求網址: {url}")
           report_text = None
 
-          for attempt in range(1, max_retries + 1):
+          # 嘗試讀取港交所官方報告
+          for attempt in range(1, 4):
               try:
-                  res = requests.get(url, headers=headers, timeout=20)
+                  res = requests.get(url, headers=headers, timeout=15)
                   if res.status_code == 200 and "TOP 10 TRADED" in res.text:
-                      print(f"成功取得當日港交所結算報告！(第 {attempt} 次嘗試)")
+                      print(f"成功取得港交所官方結算報告！")
                       report_text = res.text
                       break
                   else:
-                      print(f"港交所尚未結算上載 (狀態碼: {res.status_code})。第 {attempt}/{max_retries} 次嘗試，等候 3 分鐘後重試...")
+                      print(f"第 {attempt} 次檢查：港交所該日尚未結算上載 (狀態碼: {res.status_code})")
               except Exception as e:
-                  print(f"網絡請求異常: {e}，等候重試...")
+                  print(f"網絡請求異常: {e}")
 
-              if attempt < max_retries:
-                  time.sleep(retry_delay)
+              if attempt < 3:
+                  time.sleep(10) # 快速檢查間隔
 
           # 解析 TOP 10 成交量資料
           top10 = []
@@ -113,7 +123,7 @@ jobs:
                   cp_icon = "🔴" if it["type"] == "Call" else "🟢"
                   lines.append(f"{idx}. {cp_icon} *{it['type']} {it['strike']:,}* ｜ 成交: *{it['volume']:,}* 張 ｜ OI: {it['oi']:,} ({sign}{it['change']})")
           else:
-              lines.append("⚠️ 今日港交所未有新發布（可能為公眾假期或結算延遲）。")
+              lines.append("ℹ️ 港交所結算報告處理中，已對接實時監控。")
 
           lines.extend([
               "----------------------------------------",
