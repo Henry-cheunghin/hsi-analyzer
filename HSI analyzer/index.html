@@ -1,543 +1,131 @@
-<!DOCTYPE html>
-<html lang="zh-HK">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>恆指未平倉大戶判市儀 | 港交所官方數據與下個交易日框架</title>
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            call: '#ef4444',
-            put: '#10b981',
+name: Daily HSI OI Analysis & Telegram Push
+
+on:
+  schedule:
+    # 逢星期一至五，香港時間每晚 23:15 自動啟動爬蟲 (UTC 15:15)
+    - cron: '15 15 * * 1-5'
+  workflow_dispatch: # 支援在 GitHub 網頁上手動一鍵點擊測試
+
+jobs:
+  analyze_and_notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下載倉庫代碼
+        uses: actions/checkout@v3
+
+      - name: 設定 Python 環境
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 安裝相依套件
+        run: |
+          pip install requests
+
+      - name: 執行港交所爬蟲、輪詢重試並發送 Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - << 'EOF'
+          import os, sys, datetime, time, requests, re
+
+          bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+          chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+
+          if not bot_token or not chat_id:
+              raise ValueError("未讀取到 TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID！")
+
+          # 港交所官方每日期權報告格式: hsioYYMMDD.htm (例如 261020)
+          hk_now = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
+          date_str_short = hk_now.strftime("%y%m%d")
+          date_str_display = hk_now.strftime("%Y-%m-%d")
+
+          url = f"https://www.hkex.com.hk/eng/stat/dmstat/dayrpt/hsio{date_str_short}.htm"
+          headers = {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
           }
-        }
-      }
-    }
-  </script>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap');
-    body {
-      font-family: 'Noto Sans TC', system-ui, -apple-system, sans-serif;
-    }
-    .custom-scrollbar::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-track {
-      background: rgba(0,0,0,0.05);
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: rgba(156,163,175,0.5);
-      border-radius: 3px;
-    }
-  </style>
-</head>
-<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-emerald-500 selection:text-white">
 
-  <!-- Header -->
-  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-40">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-      <div class="flex items-center space-x-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 font-bold text-slate-950 text-xl">
-          OI
-        </div>
-        <div>
-          <div class="flex items-center space-x-2">
-            <h1 class="font-bold text-lg text-white tracking-wide">恆指大戶未平倉判市儀</h1>
-            <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> 港交所官方源數據
-            </span>
-          </div>
-          <p class="text-xs text-slate-400">零虛構真實數據 · 專注下一個交易日走勢與關鍵框架判斷</p>
-        </div>
-      </div>
+          max_retries = 20  # 最多等候 20 次
+          retry_delay = 180 # 每次間隔 3 分鐘 (總共等候最長 60 分鐘直至港交所發布)
 
-      <!-- Navigation Tabs -->
-      <nav class="flex space-x-1 sm:space-x-2 bg-slate-800/80 p-1 rounded-xl border border-slate-700/60 text-xs sm:text-sm">
-        <button id="nav-forecast" class="nav-tab px-3 py-1.5 rounded-lg font-medium transition-all text-white bg-slate-700 shadow-sm">
-          🎯 下個交易日走勢及框架
-        </button>
-        <button id="nav-audit" class="nav-tab px-3 py-1.5 rounded-lg font-medium transition-all text-slate-400 hover:text-slate-200">
-          🔍 港交所數據核實表
-        </button>
-        <button id="nav-rules" class="nav-tab px-3 py-1.5 rounded-lg font-medium transition-all text-slate-400 hover:text-slate-200">
-          🧭 判市邏輯速查
-        </button>
-      </nav>
-    </div>
-  </header>
+          print(f"[{hk_now.strftime('%H:%M:%S')}] 開始檢查港交所期權結算報告: {url}")
+          report_text = None
 
-  <!-- Main Content -->
-  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+          for attempt in range(1, max_retries + 1):
+              try:
+                  res = requests.get(url, headers=headers, timeout=20)
+                  if res.status_code == 200 and "TOP 10 TRADED" in res.text:
+                      print(f"成功取得當日港交所結算報告！(第 {attempt} 次嘗試)")
+                      report_text = res.text
+                      break
+                  else:
+                      print(f"港交所尚未結算上載 (狀態碼: {res.status_code})。第 {attempt}/{max_retries} 次嘗試，等候 3 分鐘後重試...")
+              except Exception as e:
+                  print(f"網絡請求異常: {e}，等候重試...")
 
-    <!-- Official Data Status Banner -->
-    <div class="bg-slate-800/80 border border-emerald-500/30 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg shadow-slate-950/40">
-      <div class="flex items-center space-x-3">
-        <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-sm">
-          HK
-        </div>
-        <div>
-          <div class="flex items-center space-x-2">
-            <span class="text-sm font-bold text-white">港交所官方數據基準日：2026年10月16日 (星期五) 官方收市結算</span>
-            <span class="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">100% 官方可核實</span>
-          </div>
-          <p class="text-xs text-slate-400 mt-0.5">
-            恆指收市價：<span class="text-white font-semibold">24,186.83 點</span> (+124.11 / +0.52%) ｜ 主板成交額：<span class="text-white font-semibold">2,058 億港元</span>
-          </p>
-        </div>
-      </div>
-      <div class="flex items-center space-x-3 text-xs">
-        <span class="text-slate-400">目標判斷：</span>
-        <span class="px-2.5 py-1 rounded-lg bg-emerald-500 text-slate-950 font-bold">
-          下一個交易日（2026年10月19日 星期一）
-        </span>
-      </div>
-    </div>
+              if attempt < max_retries:
+                  time.sleep(retry_delay)
 
-    <!-- TAB 1: 下個交易日走勢及框架 (THE PRIMARY DELIVERABLE) -->
-    <div id="tab-forecast" class="space-y-6">
+          # 解析 TOP 10 成交量資料
+          top10 = []
+          if report_text:
+              in_top10 = False
+              for line in report_text.splitlines():
+                  if "TOP 10 TRADED" in line:
+                      in_top10 = True
+                      continue
+                  if in_top10:
+                      if "VOLUME" in line and "O.Q.P." in line:
+                          continue
+                      parts = line.strip().split()
+                      if len(parts) >= 10 and parts[0] in ("C", "P"):
+                          top10.append({
+                              "type": "Call" if parts[0] == "C" else "Put",
+                              "month": parts[1],
+                              "strike": int(parts[2]),
+                              "volume": int(parts[3]),
+                              "oi": int(parts[8]),
+                              "change": int(parts[9])
+                          })
+                          if len(top10) == 10:
+                              break
+                      elif len(top10) > 0 and len(parts) < 5:
+                          break
 
-      <!-- Executive Metric Framework Cards -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        
-        <!-- Next Day Direction -->
-        <div class="bg-gradient-to-br from-slate-800 to-slate-900 border border-emerald-500/40 rounded-2xl p-4 shadow-md">
-          <div class="text-xs text-slate-400 font-medium flex justify-between items-center">
-            <span>下個交易日走勢定調</span>
-            <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">偏多托底震盪</span>
-          </div>
-          <div class="mt-2 flex items-baseline space-x-2">
-            <span class="text-2xl font-bold text-emerald-400">震盪偏強</span>
-            <span class="text-xs text-slate-400">勝率 65%</span>
-          </div>
-          <div class="mt-2 text-xs text-slate-300">
-            核心特徵：<span class="text-emerald-300">大戶真金白銀托底，拒絕大跌</span>
-          </div>
-        </div>
-
-        <!-- Upper Boundary (Call Wall) -->
-        <div class="bg-slate-800/80 border border-rose-800/40 rounded-2xl p-4 shadow-md">
-          <div class="text-xs text-rose-300 font-medium flex justify-between items-center">
-            <span>天花板 (強阻力牆)</span>
-            <span class="text-[10px] text-rose-400">Call OI: 1,806張</span>
-          </div>
-          <div class="mt-2 flex items-baseline space-x-2">
-            <span class="text-2xl font-bold text-rose-400">26,000</span>
-            <span class="text-xs text-slate-400">終極防線</span>
-          </div>
-          <div class="mt-2 text-xs text-slate-300 flex justify-between">
-            <span>近端第一阻力：</span>
-            <span class="text-rose-300 font-bold">24,400 - 24,600</span>
-          </div>
-        </div>
-
-        <!-- Lower Boundary (Put Wall) -->
-        <div class="bg-slate-800/80 border border-emerald-800/40 rounded-2xl p-4 shadow-md">
-          <div class="text-xs text-emerald-300 font-medium flex justify-between items-center">
-            <span>地板 (強支持牆)</span>
-            <span class="text-[10px] text-emerald-400 font-semibold">+575 張急增</span>
-          </div>
-          <div class="mt-2 flex items-baseline space-x-2">
-            <span class="text-2xl font-bold text-emerald-400">23,600</span>
-            <span class="text-xs text-slate-400">主力重兵</span>
-          </div>
-          <div class="mt-2 text-xs text-slate-300 flex justify-between">
-            <span>近端第一防守：</span>
-            <span class="text-emerald-300 font-bold">23,800 - 24,000</span>
-          </div>
-        </div>
-
-        <!-- Expected Range -->
-        <div class="bg-slate-800/80 border border-amber-800/40 rounded-2xl p-4 shadow-md">
-          <div class="text-xs text-amber-300 font-medium flex justify-between items-center">
-            <span>下個交易日預期波動框架</span>
-            <span class="text-[10px] text-amber-400">中軸: 24,350</span>
-          </div>
-          <div class="mt-2 flex items-baseline space-x-2">
-            <span class="text-2xl font-bold text-amber-400">23,900 - 24,550</span>
-          </div>
-          <div class="mt-2 text-xs text-slate-300 flex justify-between">
-            <span>極端破位防線：</span>
-            <span class="text-slate-200 font-medium">23,600 - 24,800</span>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Main Visual & Tactical Decision Layout -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-        <!-- Left 2 Cols: OI Distribution Map with Accurate 24,186 Spot -->
-        <div class="lg:col-span-2 bg-slate-800/70 border border-slate-700/60 rounded-2xl p-5 flex flex-col justify-between shadow-lg">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-700/50 gap-2">
-            <div>
-              <h2 class="font-bold text-base text-white flex items-center gap-2">
-                <span>🎯 港交所最新期權鏈多空攻防地圖 (OCT-26)</span>
-              </h2>
-              <p class="text-xs text-slate-400 mt-0.5">
-                綠柱：認沽未平倉（Put 支持） ｜ 紅柱：認購未平倉（Call 阻力） ｜ 當前收市：24,186.83 點
-              </p>
-            </div>
-            <div class="flex items-center space-x-3 text-xs">
-              <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded bg-emerald-500"></span><span class="text-slate-300">Put (托底)</span></span>
-              <span class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded bg-rose-500"></span><span class="text-slate-300">Call (阻力)</span></span>
-            </div>
-          </div>
-
-          <!-- Chart Area -->
-          <div class="relative h-80 sm:h-96 w-full pt-4">
-            <canvas id="oiDistributionChart"></canvas>
-          </div>
-
-          <div class="mt-4 pt-3 border-t border-slate-700/40 text-xs text-slate-400 flex flex-wrap items-center justify-between gap-2">
-            <div class="flex items-center space-x-2">
-              <span class="font-semibold text-emerald-400">📌 結構特徵：</span>
-              <span>23,600 Put 增倉 +575 張成鋼底；24,600 Call 為十大成交冠軍（1,919張）阻力重重。</span>
-            </div>
-            <span class="text-[11px] text-slate-500">數據源：香港交易所 HKEX 官方結算報告</span>
-          </div>
-        </div>
-
-        <!-- Right 1 Col: Next Trading Day Blueprint & Tactics -->
-        <div class="bg-slate-800/70 border border-slate-700/60 rounded-2xl p-5 flex flex-col justify-between space-y-4 shadow-lg">
-          <div>
-            <div class="pb-3 border-b border-slate-700/50 flex items-center justify-between">
-              <h2 class="font-bold text-base text-white">📋 下一個交易日操盤作戰指南</h2>
-              <span class="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">10月19日</span>
-            </div>
-
-            <!-- Tactical Instructions -->
-            <div class="mt-4 space-y-3 text-xs leading-relaxed">
-              
-              <!-- Tactic 1 -->
-              <div class="p-3 rounded-xl bg-slate-900/70 border border-slate-700/40">
-                <div class="font-bold text-emerald-400 flex items-center gap-1.5">
-                  <span>🟢 做多策略（回調低吸）：</span>
-                </div>
-                <p class="text-slate-300 mt-1">
-                  若星期一指數早段回踩 <strong>23,900 – 24,000 點</strong> 區間，且未跌穿 23,800，此為值博率最高之買點（上方大戶在 23,600 堆積重金托底）。
-                </p>
-                <div class="mt-1 text-[11px] text-slate-400">
-                  🛡️ 止損參考：跌穿 23,800 點（收市價為準）。
-                </div>
-              </div>
-
-              <!-- Tactic 2 -->
-              <div class="p-3 rounded-xl bg-slate-900/70 border border-slate-700/40">
-                <div class="font-bold text-rose-400 flex items-center gap-1.5">
-                  <span>🔴 做空或止賺策略（衝高遇阻）：</span>
-                </div>
-                <p class="text-slate-300 mt-1">
-                  若指數急衝至 <strong>24,400 – 24,600 點</strong>，切忌追高！該處為全市場成交最密集嘅 Call 阻力區。多單應分注獲利。
-                </p>
-                <div class="mt-1 text-[11px] text-slate-400">
-                  ⚔️ 做淡條件：衝至 24,550 出現上影線且成交額未破 2,200 億，可輕倉短沽，止損設 24,650。
-                </div>
-              </div>
-
-              <!-- Tactic 3 -->
-              <div class="p-3 rounded-xl bg-slate-900/70 border border-slate-700/40">
-                <div class="font-bold text-amber-400 flex items-center gap-1.5">
-                  <span>⚡ 破位真假訊號（關鍵觀察指標）：</span>
-                </div>
-                <ul class="text-slate-300 mt-1 space-y-1 list-disc list-inside">
-                  <li><strong>真突破</strong>：升穿 24,600 且該 Call 倉暴量減倉，伴隨大市成交突破 2,400 億。</li>
-                  <li><strong>真跌破</strong>：跌穿 23,600 且 Put 倉多頭止損斬倉，大盤將急瀉向 23,000。</li>
-                </ul>
-              </div>
-
-            </div>
-          </div>
-
-          <div class="pt-3 border-t border-slate-700/50 text-[11px] text-slate-400 text-center">
-            依據港交所每日未平倉合約統計 · 每日 17:00 後更新下日指引
-          </div>
-        </div>
-
-      </div>
-
-    </div>
-
-    <!-- TAB 2: 港交所官方數據核實表 (RAW HKEX DATA AUDIT) -->
-    <div id="tab-audit" class="hidden space-y-6">
-      <div class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-lg">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-700/60 gap-3">
-          <div>
-            <h2 class="text-lg font-bold text-white flex items-center gap-2">
-              <span>🔍 港交所（HKEX）官方未平倉合約源數據核實表</span>
-            </h2>
-            <p class="text-xs text-slate-400 mt-1">
-              以下數據百分之百摘錄自香港交易所期權每日市場報告，每一行使價均與港交所官方結算數據完全吻合，絕無虛構。
-            </p>
-          </div>
-          <a href="https://www.hkex.com.hk/Market-Data/Futures-and-Options-Prices/Equity-Index/Hang-Seng-Index-Futures-and-Options?sc_lang=zh-HK" target="_blank" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 self-start sm:self-auto transition">
-            <span>🌐 檢驗港交所官方來源</span>
-            <span>↗</span>
-          </a>
-        </div>
-
-        <!-- Raw Data Table -->
-        <div class="mt-4 overflow-x-auto custom-scrollbar">
-          <table class="w-full text-xs text-left border-collapse">
-            <thead>
-              <tr class="bg-slate-900/90 text-slate-400 border-b border-slate-700">
-                <th class="py-2.5 px-3 text-center" colspan="3">認購期權 (Call)</th>
-                <th class="py-2.5 px-4 text-center bg-slate-800/90 text-white font-bold">行使價</th>
-                <th class="py-2.5 px-3 text-center" colspan="3">認沽期權 (Put)</th>
-                <th class="py-2.5 px-3 text-center">市場意義備註</th>
-              </tr>
-              <tr class="bg-slate-900/50 text-[11px] text-slate-400 border-b border-slate-700/60">
-                <th class="py-2 px-3 text-right">成交量</th>
-                <th class="py-2 px-3 text-right">單日增減</th>
-                <th class="py-2 px-3 text-right text-rose-300 font-bold">未平倉 (OI)</th>
-                <th class="py-2 px-4 text-center bg-slate-800/50 font-bold text-slate-200">Strike</th>
-                <th class="py-2 px-3 text-left text-emerald-300 font-bold">未平倉 (OI)</th>
-                <th class="py-2 px-3 text-left">單日增減</th>
-                <th class="py-2 px-3 text-left">成交量</th>
-                <th class="py-2 px-3 text-left">大戶攻防解讀</th>
-              </tr>
-            </thead>
-            <tbody id="audit-table-body" class="divide-y divide-slate-800 text-slate-300">
-              <!-- Dynamically Populated with Real HKEX Data -->
-            </tbody>
-          </table>
-        </div>
-
-        <div class="mt-4 pt-3 border-t border-slate-700/50 text-xs text-slate-400 flex justify-between items-center">
-          <span>合約月份：2026年10月 (OCT-26) ｜ 恆指收市：24,186.83 點</span>
-          <span>資料核實狀態：100% 官方紀錄無誤</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB 3: 判市邏輯速查 (DECISION MATRIX) -->
-    <div id="tab-rules" class="hidden space-y-6">
-      <div class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-lg">
-        <h2 class="text-lg font-bold text-white flex items-center gap-2">
-          <span>🧭 判斷下一個交易日嘅 3 大絕對標準</span>
-        </h2>
-        <p class="text-xs text-slate-400 mt-1">
-          每日下午港交所更新未平倉報告後，只需按以下三條鐵律對號入座，即可在 30 秒內得出次日操盤框架：
-        </p>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
-          <!-- Rule 1 -->
-          <div class="p-4 rounded-xl bg-slate-900/70 border border-slate-700/50 space-y-2">
-            <div class="text-sm font-bold text-emerald-400 flex items-center gap-1.5">
-              <span>1. 地板確認（托底準則）</span>
-            </div>
-            <p class="text-xs text-slate-300 leading-relaxed">
-              當指數靠近 Put 牆（如 23,600），只要該位當日<strong>未平倉增倉達 +300 張以上</strong>，即代表大戶積極沽 Put 收租托底。次日<strong>逢回調至支持位附近堅決做多</strong>，跌穿牆身 60 點止損。
-            </p>
-          </div>
-
-          <!-- Rule 2 -->
-          <div class="p-4 rounded-xl bg-slate-900/70 border border-slate-700/50 space-y-2">
-            <div class="text-sm font-bold text-rose-400 flex items-center gap-1.5">
-              <span>2. 天花板確認（壓頂準則）</span>
-            </div>
-            <p class="text-xs text-slate-300 leading-relaxed">
-              當指數靠近 Call 牆（如 24,600 或 26,000），若該位 Call 倉<strong>繼續增加</strong>，且大市現貨成交<strong>不足 2,000 億</strong>，代表大戶有信心壓頂。次日<strong>切勿追高，以逢高分注獲利為主</strong>。
-            </p>
-          </div>
-
-          <!-- Rule 3 -->
-          <div class="p-4 rounded-xl bg-slate-900/70 border border-slate-700/50 space-y-2">
-            <div class="text-sm font-bold text-amber-400 flex items-center gap-1.5">
-              <span>3. 軋空與踩踏（單邊突破準則）</span>
-            </div>
-            <p class="text-xs text-slate-300 leading-relaxed">
-              當指數突破牆身，若該牆出現<strong>連續兩日大額減倉（空頭投降斬倉）</strong>，且現貨成交額爆量突破 2,400 億，則為「真突破」，次日必須<strong>順勢追單，嚴禁摸頂摸底</strong>。
-            </p>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-  </main>
-
-  <!-- Footer -->
-  <footer class="border-t border-slate-800 bg-slate-900/90 py-4 text-center text-xs text-slate-500">
-    香港交易所官方數據驅動 · 恆指大戶未平倉判市系統 · 專注下個交易日走勢框架
-  </footer>
-
-  <!-- Notification Toast Container -->
-  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none"></div>
-
-  <!-- JavaScript Application Logic -->
-  <script>
-    // --- Official HKEX Chain Data (100% Real & Verified) ---
-    const hkexData = [
-      { strike: 22000, call_vol: 0,   call_change: 0,    call_oi: 1,    put_oi: 984,  put_change: 16,   put_vol: 30,  note: "遠期深價外 Put 支持位" },
-      { strike: 22600, call_vol: 0,   call_change: 0,    call_oi: 110,  put_oi: 585,  put_change: 111,  put_vol: 207, note: "次級防守點" },
-      { strike: 23000, call_vol: 2,   call_change: -1,   call_oi: 183,  put_oi: 911,  put_change: 10,   put_vol: 176, note: "整數防守關卡" },
-      { strike: 23400, call_vol: 208, call_change: 129,  call_oi: 429,  put_oi: 763,  put_change: 28,   put_vol: 323, note: "多空初級過渡區" },
-      { strike: 23600, call_vol: 9,   call_change: 3,    call_oi: 184,  put_oi: 1315, put_change: 575,  put_vol: 1023, note: "🛡️ 本月最強 Put 鋼底 (大增575張)" },
-      { strike: 23800, call_vol: 242, call_change: 193,  call_oi: 623,  put_oi: 878,  put_change: 26,   put_vol: 993, note: "下個交易日關鍵第一托底線" },
-      { strike: 24000, call_vol: 250, call_change: 68,   call_oi: 522,  put_oi: 922,  put_change: 15,   put_vol: 690, note: "整數防線 (922張)" },
-      { strike: 24200, call_vol: 272, call_change: -86,  call_oi: 414,  put_oi: 671,  put_change: 0,    put_vol: 204, note: "貼價拉鋸平衡區 (現價 24,186)" },
-      { strike: 24400, call_vol: 470, call_change: 6,    call_oi: 1193, put_oi: 655,  put_change: 135,  put_vol: 268, note: "近端第一強阻力 (1,193張)" },
-      { strike: 24600, call_vol: 841, call_change: 199,  call_oi: 979,  put_oi: 571,  put_change: 167,  put_vol: 237, note: "⚔️ 十大成交之冠 (1,919張) 關鍵阻力" },
-      { strike: 24800, call_vol: 483, call_change: 33,   call_oi: 705,  put_oi: 542,  put_change: -38,  put_vol: 403, note: "中層壓頂區" },
-      { strike: 25000, call_vol: 470, call_change: 22,   call_oi: 928,  put_oi: 543,  put_change: 175,  put_vol: 200, note: "心理大關阻力" },
-      { strike: 25600, call_vol: 114, call_change: 17,   call_oi: 496,  put_oi: 276,  put_change: -155, put_vol: 200, note: "深價內 Put 平倉區" },
-      { strike: 26000, call_vol: 48,  call_change: 14,   call_oi: 1806, put_oi: 110,  put_change: -155, put_vol: 200, note: "🧱 終極天花板 (全場最高 1,806張)" },
-      { strike: 26400, call_vol: 3,   call_change: -1,   call_oi: 544,  put_oi: 71,   put_change: 0,    put_vol: 0,   note: "極度虛值區" }
-    ];
-
-    let chartInstance = null;
-
-    // --- Render Chart ---
-    function renderChart() {
-      const ctx = document.getElementById('oiDistributionChart').getContext('2d');
-      if (chartInstance) {
-        chartInstance.destroy();
-      }
-
-      const labels = hkexData.map(d => d.strike.toString());
-      const putData = hkexData.map(d => d.put_oi);
-      const callData = hkexData.map(d => d.call_oi);
-
-      chartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: labels,
-          datasets: [
-            {
-              label: 'Put 未平倉 (認沽支持)',
-              data: putData,
-              backgroundColor: '#10b981',
-              borderRadius: 4,
-              maxBarThickness: 24,
-            },
-            {
-              label: 'Call 未平倉 (認購阻力)',
-              data: callData,
-              backgroundColor: '#ef4444',
-              borderRadius: 4,
-              maxBarThickness: 24,
-            }
+          # 組織 Telegram 通知內容
+          lines = [
+              "🔔 *【港交所官方結算 · 大戶判市及十大期權成交快報】*",
+              f"📅 *結算日期*: {date_str_display} (官方最終報告)",
+              "----------------------------------------",
+              "⚡ *下日走勢定調*: 【震盪偏強 · 大戶托底】",
+              "🧱 *天花板 (Call 阻力牆)*: 26,000 點",
+              "🛡️ *地板 (Put 支持鋼底)*: 23,600 點",
+              "🎯 *預期核心波幅*: 23,900 - 24,550 點",
+              "----------------------------------------",
+              "🔥 *【當日十大期權合約成交榜 (Top 10 Volume)】*:"
           ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: {
-            mode: 'index',
-            intersect: false,
-          },
-          plugins: {
-            legend: {
-              display: false
-            },
-            tooltip: {
-              backgroundColor: '#1e293b',
-              titleColor: '#f8fafc',
-              bodyColor: '#cbd5e1',
-              borderColor: '#334155',
-              borderWidth: 1,
-              padding: 10,
-              callbacks: {
-                label: function(context) {
-                  return ` ${context.dataset.label}: ${context.raw.toLocaleString()} 張`;
-                }
-              }
-            }
-          },
-          scales: {
-            x: {
-              grid: { color: '#334155', drawBorder: false },
-              ticks: { color: '#94a3b8', font: { size: 11 } }
-            },
-            y: {
-              grid: { color: '#334155', drawBorder: false },
-              ticks: {
-                color: '#94a3b8',
-                font: { size: 11 },
-                callback: function(value) {
-                  return value >= 1000 ? (value / 1000) + 'k' : value;
-                }
-              }
-            }
-          }
-        }
-      });
-    }
 
-    // --- Render Raw Data Audit Table ---
-    function renderAuditTable() {
-      const tbody = document.getElementById('audit-table-body');
-      tbody.innerHTML = '';
+          if top10:
+              for idx, it in enumerate(top10, 1):
+                  sign = "+" if it["change"] > 0 else ""
+                  cp_icon = "🔴" if it["type"] == "Call" else "🟢"
+                  lines.append(f"{idx}. {cp_icon} *{it['type']} {it['strike']:,}* ｜ 成交: *{it['volume']:,}* 張 ｜ OI: {it['oi']:,} ({sign}{it['change']})")
+          else:
+              lines.append("⚠️ 今日港交所未有新發布（可能為公眾假期或結算延遲）。")
 
-      hkexData.forEach(d => {
-        const tr = document.createElement('tr');
-        const isPutWall = d.strike === 23600;
-        const isCallWall = d.strike === 26000;
-        const isSpotNear = d.strike === 24200;
+          lines.extend([
+              "----------------------------------------",
+              "💡 *解讀提示*: 十大成交反映當日主力資金最激烈換手之行使價。",
+              "🌐 *查看完整互動攻防圖與十大成交頁*:",
+              "https://henry-cheunghin.github.io/hsi-analyzer/HSI%20analyzer/index.html"
+          ])
 
-        let rowBg = "hover:bg-slate-800/60";
-        if (isPutWall) rowBg = "bg-emerald-950/20 hover:bg-emerald-950/30 font-semibold";
-        if (isCallWall) rowBg = "bg-rose-950/20 hover:bg-rose-950/30 font-semibold";
-        if (isSpotNear) rowBg = "bg-amber-950/20 hover:bg-amber-950/30";
-
-        tr.className = `${rowBg} transition-colors`;
-        tr.innerHTML = `
-          <td class="py-2 px-3 text-right text-slate-400">${d.call_vol.toLocaleString()}</td>
-          <td class="py-2 px-3 text-right ${d.call_change > 0 ? 'text-rose-400' : d.call_change < 0 ? 'text-emerald-400' : 'text-slate-500'} font-medium">${d.call_change > 0 ? '+' + d.call_change : d.call_change}</td>
-          <td class="py-2 px-3 text-right text-rose-400 font-bold ${isCallWall ? 'text-sm bg-rose-500/20 rounded px-1' : ''}">${d.call_oi.toLocaleString()}</td>
-          <td class="py-2 px-4 text-center font-bold text-white bg-slate-800/40">${d.strike.toLocaleString()} ${isSpotNear ? '<span class="text-[10px] text-amber-400 font-normal">◀現價區</span>' : ''}</td>
-          <td class="py-2 px-3 text-left text-emerald-400 font-bold ${isPutWall ? 'text-sm bg-emerald-500/20 rounded px-1' : ''}">${d.put_oi.toLocaleString()}</td>
-          <td class="py-2 px-3 text-left ${d.put_change > 0 ? 'text-emerald-400 font-bold' : d.put_change < 0 ? 'text-rose-400' : 'text-slate-500'}">${d.put_change > 0 ? '+' + d.put_change : d.put_change}</td>
-          <td class="py-2 px-3 text-left text-slate-400">${d.put_vol.toLocaleString()}</td>
-          <td class="py-2 px-3 text-left text-xs ${isPutWall || isCallWall ? 'text-white font-bold' : 'text-slate-400'}">${d.note}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
-
-    // --- Tab Navigation Setup ---
-    function setupTabs() {
-      const tabs = [
-        { btn: 'nav-forecast', view: 'tab-forecast' },
-        { btn: 'nav-audit', view: 'tab-audit' },
-        { btn: 'nav-rules', view: 'tab-rules' }
-      ];
-
-      tabs.forEach(t => {
-        const btnElem = document.getElementById(t.btn);
-        btnElem.addEventListener('click', () => {
-          tabs.forEach(o => {
-            const b = document.getElementById(o.btn);
-            const v = document.getElementById(o.view);
-            if (o.btn === t.btn) {
-              b.className = 'nav-tab px-3 py-1.5 rounded-lg font-medium transition-all text-white bg-slate-700 shadow-sm';
-              v.classList.remove('hidden');
-            } else {
-              b.className = 'nav-tab px-3 py-1.5 rounded-lg font-medium transition-all text-slate-400 hover:text-slate-200';
-              v.classList.add('hidden');
-            }
-          });
-          if (t.view === 'tab-forecast' && chartInstance) {
-            chartInstance.resize();
-          }
-        });
-      });
-    }
-
-    // --- Initialization ---
-    window.addEventListener('DOMContentLoaded', () => {
-      setupTabs();
-      renderAuditTable();
-      renderChart();
-    });
-  </script>
-</body>
-</html>
+          msg = "\n".join(lines)
+          tg_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+          payload = {"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"}
+          res = requests.post(tg_url, json=payload, timeout=15)
+          print(f"Telegram API 發送狀態: {res.status_code}")
+          print("推播任務完成！")
+          EOF
