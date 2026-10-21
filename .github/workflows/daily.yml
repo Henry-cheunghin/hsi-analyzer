@@ -1,13 +1,14 @@
-name: 恆指期權未平倉全自動判市與網頁更新
+name: 恆指期權未平倉全自動判市與網頁更新 (永久零手動版)
 
 on:
   schedule:
-    # 逢星期一至五，香港時間每晚 23:15 自動執行 (UTC 15:15)
-    - cron: '15 15 * * 1-5'
-  workflow_dispatch: # 支援在 GitHub 網頁上手動一鍵點擊測試
+    # 逢星期一至五，香港時間 23:10, 23:20, 23:30, 23:40 自動輪詢 (UTC 15:10, 15:20, 15:30, 15:40)
+    # 連環觸發徹底消除 GitHub 排隊延遲，免人工干預 100% 完成！
+    - cron: '10,20,30,40 15 * * 1-5'
+  workflow_dispatch: # 保留手動測試按鈕
 
 permissions:
-  contents: write # 允許自動提交更新後的數據回 GitHub
+  contents: write
 
 jobs:
   analyze_and_auto_update:
@@ -25,7 +26,7 @@ jobs:
         run: |
           pip install requests
 
-      - name: 4. 自動抓取最新行情、期權鏈並推播 Telegram
+      - name: 4. 自動抓取最新行情、期權鏈並推播 Telegram (內置防重複鎖)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
